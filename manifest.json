@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "Score Blocker",
+  "version": "1.0",
+  "description": "Blurs sports scores in Google and YouTube results until you click to reveal them.",
+  "permissions": ["storage", "scripting"],
+  "host_permissions": [
+    "https://www.google.com/*",
+    "https://www.youtube.com/*"
+  ],
+  "optional_host_permissions": ["*://*/*"],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://www.google.com/*", "https://www.youtube.com/*"],
+      "js": ["common/defaults.js", "content/content.js"],
+      "css": ["content/content.css"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "options_page": "options/options.html"
+}

@@ -1,0 +1,127 @@
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #1f2328;
+  --muted: #656d76;
+  --line: #d8dee4;
+  --accent: #1a7f37;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1c2128;
+    --fg: #e6edf3;
+    --muted: #9198a1;
+    --line: #30363d;
+    --accent: #3fb950;
+  }
+}
+
+body {
+  width: 260px;
+  margin: 0;
+  padding: 14px;
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.sb-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.sb-head h1 {
+  font-size: 15px;
+  margin: 0;
+}
+
+.sb-state {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.sb-state.on {
+  color: var(--accent);
+}
+
+.sb-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.sb-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sb-track {
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+  background: var(--line);
+  transition: background 0.15s ease;
+  flex: 0 0 auto;
+  display: block;
+}
+
+.sb-thumb {
+  display: block;
+  width: 18px;
+  height: 18px;
+  margin: 2px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+  transition: transform 0.15s ease;
+}
+
+.sb-toggle input:checked + .sb-track {
+  background: var(--accent);
+}
+
+.sb-toggle input:checked + .sb-track .sb-thumb {
+  transform: translateX(18px);
+}
+
+.sb-toggle input:focus-visible + .sb-track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sb-toggle-label {
+  font-weight: 600;
+}
+
+.sb-count {
+  margin: 14px 0 12px;
+  color: var(--muted);
+}
+
+.sb-count strong {
+  color: var(--fg);
+  font-size: 15px;
+}
+
+.sb-foot {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.sb-foot a {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 12px;
+}
+
+.sb-foot a:hover {
+  text-decoration: underline;
+}

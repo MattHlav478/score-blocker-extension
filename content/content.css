@@ -1,0 +1,50 @@
+/* Score Blocker — masking styles. Kept narrow so host pages stay intact. */
+
+.sb-masked {
+  filter: blur(6px);
+  cursor: pointer;
+  transition: filter 0.15s ease;
+  border-radius: 2px;
+  /* Keep the blur from bleeding into neighbouring text. */
+  display: inline-block;
+  vertical-align: baseline;
+  user-select: none;
+}
+
+.sb-masked.sb-revealed {
+  filter: none;
+  user-select: auto;
+}
+
+/* Opt-in via the "reveal on hover" setting; off by default so a drifting
+   cursor can't spoil a page of results. */
+.sb-hover-reveal .sb-masked:hover {
+  filter: none;
+}
+
+.sb-marker {
+  font-size: 0.8em;
+  line-height: 1;
+  opacity: 0.55;
+  margin-left: 2px;
+  cursor: default;
+  user-select: none;
+}
+
+.sb-masked.sb-revealed + .sb-marker {
+  opacity: 0.2;
+}
+
+.sb-thumb-blurred {
+  filter: blur(20px);
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.sb-thumb-blurred.sb-revealed {
+  filter: none;
+}
+
+.sb-hover-reveal .sb-thumb-blurred:hover {
+  filter: none;
+}
