@@ -1,0 +1,38 @@
+/*
+ * Pre-blur: injected at document_start so result text is already blurred on the
+ * first paint, before content.js has had a chance to run. content.js adds
+ * .sb-scanned to <html> once its first scan finishes, which releases this and
+ * leaves only the precise masks behind.
+ *
+ * The service worker registers this stylesheet only while the extension is
+ * enabled and pre-blur is switched on, so a disabled extension injects nothing.
+ *
+ * The animation is a deadman switch: if content.js never runs (an error, a
+ * reload mid-navigation), the blur still lifts on its own after 3s rather than
+ * leaving the page permanently unreadable.
+ */
+
+@keyframes sb-preblur-release {
+  to {
+    /* blur(0) rather than `none`: an explicit endpoint for the interpolation. */
+    filter: blur(0);
+  }
+}
+
+html:not(.sb-scanned) :is(
+  /* Google: result titles and snippets in the results column */
+  #search h3,
+  #rso h3,
+  #center_col h3,
+  #center_col .VwiC3b,
+  #center_col [data-sncf],
+  /* YouTube: video titles and metadata snippets */
+  #video-title,
+  yt-formatted-string#video-title,
+  .metadata-snippet-text,
+  h1.ytd-watch-metadata,
+  #title h1
+) {
+  filter: blur(6px);
+  animation: sb-preblur-release 0s linear 3s forwards;
+}

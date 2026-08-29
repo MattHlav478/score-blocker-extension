@@ -110,6 +110,7 @@
   function render(settings) {
     el('enabled').checked = settings.enabled;
     el('revealOnHover').checked = settings.revealOnHover;
+    el('preBlur').checked = settings.preBlur;
     el('keywordWindow').value = settings.keywordWindow;
     for (const rule of RULE_IDS) {
       el(`rule-${rule}`).checked = Boolean(settings.rules[rule]);
@@ -126,6 +127,7 @@
     return {
       enabled: el('enabled').checked,
       revealOnHover: el('revealOnHover').checked,
+      preBlur: el('preBlur').checked,
       keywordWindow: Number(el('keywordWindow').value),
       rules,
       teams: parseList(el('teams').value),

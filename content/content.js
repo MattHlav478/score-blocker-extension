@@ -15,6 +15,7 @@
   const REVEALED_CLASS = 'sb-revealed';
   const THUMB_CLASS = 'sb-thumb-blurred';
   const MARKER_CLASS = 'sb-marker';
+  const SCANNED_CLASS = 'sb-scanned';
   const HOVER_CLASS = 'sb-hover-reveal';
   const SCAN_DEBOUNCE_MS = 150;
 
@@ -461,6 +462,7 @@
     observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 
     runScan([document.body]);
+    releasePreBlur();
     reportCount();
   }
 
@@ -491,6 +493,18 @@
     const wasActive = active;
     if (wasActive) stop();
     if (settings.enabled) start();
+  }
+
+  /**
+   * Lift the document_start pre-blur now that the real masks are in place.
+   *
+   * Only touched when pre-blur is on, which is the same condition under which
+   * the service worker injected the stylesheet — so a page that was never
+   * pre-blurred is never modified.
+   */
+  function releasePreBlur() {
+    if (!settings.preBlur) return;
+    document.documentElement.classList.add(SCANNED_CLASS);
   }
 
   function reportCount() {

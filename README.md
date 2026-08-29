@@ -28,9 +28,30 @@ re-render, a scroll-back, or a re-navigation blurs it again.
 | Thumbnail blur | The `<img>` of a video whose title/metadata matched | Partial mitigation, see limits |
 | Scan comments | YouTube comment threads | Off by default — noisy |
 
-Every rule, the keyword window, the team list, the keyword list, and hover-reveal are editable
-on the options page. Settings live in `chrome.storage.sync`, and every change applies to
+Every rule, the keyword window, the team list, the keyword list, hover-reveal, and pre-blur are
+editable on the options page. Settings live in `chrome.storage.sync`, and every change applies to
 already-open tabs immediately — no reload.
+
+## No flash of unblurred score
+
+A content script cannot run before the browser paints, so a naive extension shows the score for
+a few hundred milliseconds while the page loads. Two things prevent that:
+
+- The scanner runs at `document_end` rather than `document_idle`, which fires as soon as the DOM
+  is parsed instead of waiting for images and subresources — worth ~150ms on a typical results
+  page, and about as early as JavaScript can see the DOM at all.
+- **Pre-blur** (`content/preblur.css`) blurs result titles and snippets at `document_start`,
+  before the first paint. Once the scan finishes, `content.js` adds `.sb-scanned` to `<html>`,
+  which releases the pre-blur and leaves only the precise masks. Results sharpen as the page
+  settles; only real scores stay blurred.
+
+The stylesheet is registered by the service worker rather than declared in the manifest, because
+manifest CSS is injected unconditionally — it would blur pages even with the extension switched
+off. Registering it only while enabled keeps "off" meaning no page changes at all.
+
+It also carries a deadman switch: a CSS animation lifts the blur after 3 seconds on its own, so a
+page is never left unreadable if the content script fails to run. Turn the whole behaviour off
+under Detection rules if you would rather the page load sharp and let masks land a moment later.
 
 ## Known limits
 
@@ -60,15 +81,18 @@ background.js         service worker: defaults, badge, dynamic site registration
 common/defaults.js    shared settings schema (content script, popup, options, worker)
 content/content.js    scanning, detection, masking, MutationObserver, SPA navigation
 content/content.css   blur + reveal styles
+content/preblur.css   document_start blur, so a score is never briefly readable
 popup/                on/off toggle and live "X scores hidden" count
 options/              rules, keyword window, team/keyword lists, extra sites
 test/e2e.mjs          end-to-end tests against the real extension in Chromium
+test/preblur.mjs      frame-by-frame check that a score is never painted readable
 ```
 
 ## Tests
 
 ```
 node test/e2e.mjs
+node test/preblur.mjs
 ```
 
 Loads the real extension into Chromium against local fixtures that mimic Google and YouTube
@@ -76,5 +100,10 @@ markup, and covers the checklist: masking and reveal, false-positive spot checks
 MutationObserver picking up lazily-loaded results, `yt-navigate-finish` rescans, comments and
 navigation chrome being skipped, thumbnail blur, toggling off mid-session restoring the exact
 original text with zero leftover nodes, and the popup/options pages reading and writing storage.
+
+`preblur.mjs` loads a fixture whose subresources hold the load event open, samples every
+animation frame, and asserts that no frame ever painted the score unmasked and unblurred — plus
+that the fail-safe lifts the blur without a script, and that a disabled extension registers and
+injects nothing.
 
 Requires Playwright (`npm i -g playwright` or a local install); the runner resolves either.
