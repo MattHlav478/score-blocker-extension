@@ -120,6 +120,16 @@ test/preblur.mjs      frame-by-frame check that a score is never painted readabl
 test/matchday.mjs     the Match Day layers, and that they vanish when it is off
 ```
 
+## Publishing
+
+`STORE_LISTING.md` holds the Chrome Web Store submission copy — the permission justifications, the
+single-purpose statement, the data-usage answers and the listing text — kept in the repo so it stays
+in sync with the manifest it describes. `PRIVACY.md` is the privacy policy the dashboard requires a
+URL for.
+
+If you add or change a permission, update its justification in `STORE_LISTING.md` in the same
+commit. A later review that contradicts an earlier one is worse than no submission.
+
 ## Tests
 
 ```
