@@ -16,6 +16,9 @@
   const THUMB_CLASS = 'sb-thumb-blurred';
   const MARKER_CLASS = 'sb-marker';
   const SCANNED_CLASS = 'sb-scanned';
+  const BLOCK_MASK_CLASS = 'sb-block-masked';
+  /** Longest text a single result block is expected to hold. */
+  const MAX_BLOCK_TEXT = 600;
   const HOVER_CLASS = 'sb-hover-reveal';
   const SCAN_DEBOUNCE_MS = 150;
 
@@ -62,7 +65,13 @@
 
   const processedNodes = new WeakSet();
   const maskedSpans = new Set();
+  const maskedBlocks = new Set();
   const blurredThumbs = new Set();
+
+  /** True when the aggressive Match Day layers should run. */
+  function inMatchDay() {
+    return Boolean(settings && settings.matchDay);
+  }
 
   // ---------------------------------------------------------------- detection
 
@@ -76,10 +85,16 @@
    */
   function buildDetector(cfg) {
     const keywords = cfg.keywords.map(escapeRe).filter(Boolean);
+    const spoilers = cfg.spoilerKeywords.map(escapeRe).filter(Boolean);
     const teams = cfg.teams.map(escapeRe).filter(Boolean);
     const teamAlt = teams.length ? `(?:${teams.join('|')})` : null;
 
     return {
+      teamAny: teamAlt ? new RegExp(teamAlt, 'i') : null,
+      // Words that give a result away with no scoreline present. Match Day only.
+      spoiler: spoilers.length
+        ? new RegExp(`(?:^|[^\\w])(?:${spoilers.join('|')})(?:[^\\w]|$)`, 'i')
+        : null,
       keyword: keywords.length
         ? new RegExp(`(?:^|[^\\w])(?:${keywords.join('|')})(?:[^\\w]|$)`, 'i')
         : null,
@@ -247,8 +262,52 @@
     return masked;
   }
 
-  function blurThumbnails(fromElement) {
-    if (!settings.rules.thumbnailBlur || !fromElement) return;
+  /**
+   * Blur a whole element rather than a substring inside it.
+   *
+   * Used where masking one word would leak the rest of the sentence: "Chelsea
+   * stun Arsenal" tells you everything even with "stun" hidden. Unlike
+   * maskTextNode this performs no DOM surgery at all — it only adds a class —
+   * so teardown cannot corrupt the page, which matters because Match Day gets
+   * toggled on and off often.
+   */
+  function maskBlock(el, options) {
+    if (!el || el.nodeType !== Node.ELEMENT_NODE) return 0;
+    if (el.classList.contains(BLOCK_MASK_CLASS)) return 0;
+    // Never nest a block mask inside one that already covers this text.
+    if (el.closest(`.${BLOCK_MASK_CLASS}`)) return 0;
+    // A block far larger than one result is a container holding many of them.
+    // Masking it would blur the whole page off a single spoiler word.
+    const limit = options && options.maxText !== undefined ? options.maxText : MAX_BLOCK_TEXT;
+    if ((el.textContent || '').length > limit) return 0;
+    el.classList.add(BLOCK_MASK_CLASS);
+    el.setAttribute('role', 'button');
+    el.setAttribute('tabindex', '0');
+    if (!el.title) el.title = 'Score Blocker: hidden — click to reveal';
+    maskedBlocks.add(el);
+    return 1;
+  }
+
+  function unmaskBlocks() {
+    for (const el of maskedBlocks) {
+      el.classList.remove(BLOCK_MASK_CLASS, REVEALED_CLASS);
+      el.removeAttribute('role');
+      el.removeAttribute('tabindex');
+      if (el.title && el.title.startsWith('Score Blocker')) el.removeAttribute('title');
+    }
+    maskedBlocks.clear();
+    // Descriptions blurred by the document_start stylesheet are revealed by
+    // class too; clear those so nothing stays stuck revealed or hidden.
+    for (const el of document.querySelectorAll(`.${REVEALED_CLASS}`)) {
+      if (!el.classList.contains(MASK_CLASS) && !el.classList.contains(THUMB_CLASS)) {
+        el.classList.remove(REVEALED_CLASS);
+      }
+    }
+  }
+
+  function blurThumbnails(fromElement, force) {
+    if (!fromElement) return;
+    if (!force && !settings.rules.thumbnailBlur) return;
     const container = fromElement.closest(VIDEO_CONTAINER_SELECTOR);
     if (!container) return;
     const images = container.querySelectorAll('img, yt-image img, .sb-thumb-candidate');
@@ -275,6 +334,7 @@
       parent.normalize();
     }
     maskedSpans.clear();
+    unmaskBlocks();
     for (const img of blurredThumbs) {
       img.classList.remove(THUMB_CLASS, REVEALED_CLASS);
       if (img.title && img.title.startsWith('Score Blocker')) img.removeAttribute('title');
@@ -305,6 +365,71 @@
     return document.body;
   }
 
+  let pageSportsCache = null;
+
+  /**
+   * Does the page as a whole look sports-related?
+   *
+   * Checked against the search query and document title, so on an obviously
+   * sporting search every result qualifies even if an individual title is
+   * neutral ("Extended Highlights" with no team named).
+   */
+  function pageLooksSportsRelated() {
+    if (pageSportsCache !== null) return pageSportsCache;
+    const params = new URLSearchParams(location.search);
+    const haystack = `${params.get('q') || ''} ${params.get('search_query') || ''} ${document.title || ''}`;
+    pageSportsCache = Boolean(
+      (detector.teamAny && detector.teamAny.test(haystack)) ||
+        (detector.keyword && detector.keyword.test(haystack))
+    );
+    return pageSportsCache;
+  }
+
+  /**
+   * Does this individual result look sports-related?
+   *
+   * Gates thumbnail blurring in Match Day: descriptions are cheap to blur and
+   * one click to read, but a page where every thumbnail is blurred cannot be
+   * navigated at all, so images stay conditional.
+   */
+  function looksSportsRelated(container) {
+    if (!container) return false;
+    if (pageLooksSportsRelated()) return true;
+    const text = container.textContent || '';
+    if (!text) return false;
+    return Boolean(
+      (detector.teamAny && detector.teamAny.test(text)) ||
+        (detector.keyword && detector.keyword.test(text)) ||
+        (detector.spoiler && detector.spoiler.test(text))
+    );
+  }
+
+  /**
+   * The Match Day layers that are not driven by text-node scanning: the
+   * comments section, and thumbnails on sports-looking results.
+   */
+  function applyMatchDayLayers(root) {
+    if (!inMatchDay()) return 0;
+    let masked = 0;
+
+    if (settings.strict.blurComments) {
+      for (const el of document.querySelectorAll(SB_COMMENTS_SELECTOR)) {
+        // Deliberately unbounded: the whole section is meant to go at once.
+        masked += maskBlock(el, { maxText: Infinity });
+      }
+    }
+
+    if (settings.strict.thumbnails) {
+      const scope = root && root.nodeType === Node.ELEMENT_NODE ? root : document.body;
+      const containers = new Set(scope.querySelectorAll(VIDEO_CONTAINER_SELECTOR));
+      if (scope.matches && scope.matches(VIDEO_CONTAINER_SELECTOR)) containers.add(scope);
+      for (const container of containers) {
+        if (looksSportsRelated(container)) blurThumbnails(container, true);
+      }
+    }
+    return masked;
+  }
+
   /** Root selection: on Google we only care about the results column. */
   function scanRootsFor(root) {
     if (root !== document.body && root !== document) return [root];
@@ -321,11 +446,22 @@
     if (!element) return 0;
     if (isSkippedElement(element)) return 0;
 
+    // Outside Match Day only text containing a digit can possibly match, and
+    // skipping the rest keeps the walk cheap. The spoiler-word rule has no such
+    // guarantee, so the gate lifts while it is running.
+    const wordScan = Boolean(
+      inMatchDay() && settings.strict.spoilerWords && detector.spoiler
+    );
+
     const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
         if (processedNodes.has(node)) return NodeFilter.FILTER_REJECT;
         const value = node.nodeValue;
-        if (!value || value.length < 3 || !/\d/.test(value)) return NodeFilter.FILTER_REJECT;
+        if (!value || value.length < 3) return NodeFilter.FILTER_REJECT;
+        if (!wordScan && !/\d/.test(value)) return NodeFilter.FILTER_REJECT;
+        // Whitespace between result blocks belongs to the container that wraps
+        // all of them; accepting it would judge the whole column as one block.
+        if (wordScan && !/[A-Za-z]/.test(value)) return NodeFilter.FILTER_REJECT;
         const parent = node.parentElement;
         if (!parent || isSkippedElement(parent)) return NodeFilter.FILTER_REJECT;
         return NodeFilter.FILTER_ACCEPT;
@@ -349,6 +485,16 @@
 
     let masked = 0;
     for (const [container, group] of groups) {
+      // A spoiler word masks the whole block: hiding just the word would leave
+      // the rest of the sentence, which usually gives the result away anyway.
+      if (wordScan && detector.spoiler.test(group.text)) {
+        masked += maskBlock(container);
+        if (settings.strict.thumbnails && looksSportsRelated(container)) {
+          blurThumbnails(container, true);
+        }
+        continue;
+      }
+
       let searchFrom = 0;
       for (const textNode of group.nodes) {
         if (!textNode.isConnected) continue;
@@ -377,6 +523,7 @@
       for (const target of scanRootsFor(root)) {
         masked += scanRoot(target);
       }
+      masked += applyMatchDayLayers(root);
     }
     if (masked > 0) reportCount();
   }
@@ -418,31 +565,44 @@
 
   function onNavigate() {
     if (!active) return;
+    pageSportsCache = null; // A new query may not be sports-related at all.
     pendingFullScan = true;
     scheduleScan(null);
+  }
+
+  /** The element a click should reveal, if any. */
+  function revealTargetFor(target) {
+    const span = target.closest(`.${MASK_CLASS}`);
+    if (span) return span;
+    const block = target.closest(`.${BLOCK_MASK_CLASS}`);
+    if (block) return block;
+    if (target.classList && target.classList.contains(THUMB_CLASS)) return target;
+    // Descriptions blurred by the document_start stylesheet carry no class of
+    // their own, so they are matched by the same selector list the CSS uses.
+    if (inMatchDay() && settings.strict.blurDescriptions) {
+      const description = target.closest(SB_DESCRIPTION_SELECTOR);
+      if (description) return description;
+    }
+    return null;
   }
 
   function onClick(event) {
     const target = event.target;
     if (!(target instanceof Element)) return;
-    const span = target.closest(`.${MASK_CLASS}`);
-    if (span) {
-      event.preventDefault();
-      event.stopPropagation();
-      span.classList.toggle(REVEALED_CLASS);
-      return;
-    }
-    if (target.classList && target.classList.contains(THUMB_CLASS)) {
-      event.preventDefault();
-      event.stopPropagation();
-      target.classList.toggle(REVEALED_CLASS);
-    }
+    const revealable = revealTargetFor(target);
+    if (!revealable) return;
+    event.preventDefault();
+    event.stopPropagation();
+    revealable.classList.toggle(REVEALED_CLASS);
   }
 
   function onKeydown(event) {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     const target = event.target;
-    if (!(target instanceof Element) || !target.classList.contains(MASK_CLASS)) return;
+    if (!(target instanceof Element)) return;
+    if (!target.classList.contains(MASK_CLASS) && !target.classList.contains(BLOCK_MASK_CLASS)) {
+      return;
+    }
     event.preventDefault();
     target.classList.toggle(REVEALED_CLASS);
   }
@@ -490,6 +650,7 @@
 
   /** Re-run from scratch after a settings change while a tab is open. */
   function restart() {
+    pageSportsCache = null;
     const wasActive = active;
     if (wasActive) stop();
     if (settings.enabled) start();
@@ -507,9 +668,14 @@
     document.documentElement.classList.add(SCANNED_CLASS);
   }
 
+  /** Masked scores plus whole blocks hidden by Match Day. */
+  function hiddenCount() {
+    return maskedSpans.size + maskedBlocks.size;
+  }
+
   function reportCount() {
     try {
-      chrome.runtime.sendMessage({ type: 'SB_COUNT', count: maskedSpans.size }, () => {
+      chrome.runtime.sendMessage({ type: 'SB_COUNT', count: hiddenCount() }, () => {
         void chrome.runtime.lastError; // No popup listening is fine.
       });
     } catch (err) {
@@ -519,7 +685,7 @@
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message && message.type === 'SB_GET_COUNT') {
-      sendResponse({ count: maskedSpans.size, active });
+      sendResponse({ count: hiddenCount(), active });
     }
     return false;
   });

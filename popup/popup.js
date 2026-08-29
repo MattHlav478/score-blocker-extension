@@ -3,6 +3,9 @@
   'use strict';
 
   const enabledInput = document.getElementById('enabled');
+  const matchDayInput = document.getElementById('matchDay');
+  const matchDayRow = document.getElementById('match-day-row');
+  const matchNote = document.getElementById('match-note');
   const stateLabel = document.getElementById('state');
   const countEl = document.getElementById('count');
   const countLabel = document.getElementById('count-label');
@@ -13,11 +16,22 @@
     enabledInput.checked = enabled;
     stateLabel.textContent = enabled ? 'ON' : 'OFF';
     stateLabel.classList.toggle('on', enabled);
+    // Match Day is meaningless while the extension itself is off.
+    matchDayInput.disabled = !enabled;
+    matchDayRow.setAttribute('aria-disabled', String(!enabled));
+    renderMatchDay(matchDayInput.checked && enabled);
+  }
+
+  function renderMatchDay(on) {
+    matchDayInput.checked = on;
+    matchNote.hidden = !on;
   }
 
   function renderCount(count) {
     countEl.textContent = String(count);
-    countLabel.textContent = count === 1 ? 'score hidden on this page' : 'scores hidden on this page';
+    // Match Day hides whole blocks as well as scores, so "scores" would undercount.
+    const noun = matchDayInput.checked ? 'item' : 'score';
+    countLabel.textContent = `${noun}${count === 1 ? '' : 's'} hidden on this page`;
   }
 
   function requestCount() {
@@ -33,7 +47,9 @@
   }
 
   chrome.storage.sync.get(null, (stored) => {
-    renderState(sbMergeSettings(stored).enabled);
+    const settings = sbMergeSettings(stored);
+    renderMatchDay(settings.matchDay);
+    renderState(settings.enabled);
     requestCount();
   });
 
@@ -52,6 +68,12 @@
     // Ignore scans happening in other tabs.
     if (activeTabId !== null && sender.tab && sender.tab.id !== activeTabId) return;
     renderCount(message.count || 0);
+  });
+
+  matchDayInput.addEventListener('change', () => {
+    const matchDay = matchDayInput.checked;
+    renderMatchDay(matchDay);
+    chrome.storage.sync.set({ matchDay }, () => setTimeout(requestCount, 250));
   });
 
   document.getElementById('options').addEventListener('click', (event) => {

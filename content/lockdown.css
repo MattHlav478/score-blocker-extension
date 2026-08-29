@@ -1,0 +1,41 @@
+/*
+ * Match Day lockdown: blurs every result description / snippet.
+ *
+ * Registered by the service worker at document_start, and ONLY while the
+ * extension is enabled, Match Day is on, and 'blur descriptions' is on — so
+ * nothing is injected in any other state. Being document_start CSS, a
+ * description is blurred before the browser's first paint, never briefly
+ * readable.
+ *
+ * Unlike preblur.css this has NO release animation and no .sb-scanned escape:
+ * it stays until Match Day is switched off. Reveal is per-block, by click.
+ *
+ * KEEP IN SYNC with SB_DESCRIPTION_SELECTORS in common/defaults.js.
+ * test/matchday.mjs parses this file and fails if the two lists diverge.
+ */
+
+  #center_col .VwiC3b,
+  #center_col [data-sncf],
+  #rso [data-sncf],
+  #search .VwiC3b,
+  .metadata-snippet-text,
+  #description-text,
+  ytd-video-renderer #description-text,
+  #description-inline-expander,
+  ytd-expandable-video-description-body-renderer {
+  filter: blur(6px);
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+  #center_col .VwiC3b.sb-revealed,
+  #center_col [data-sncf].sb-revealed,
+  #rso [data-sncf].sb-revealed,
+  #search .VwiC3b.sb-revealed,
+  .metadata-snippet-text.sb-revealed,
+  #description-text.sb-revealed,
+  ytd-video-renderer #description-text.sb-revealed,
+  #description-inline-expander.sb-revealed,
+  ytd-expandable-video-description-body-renderer.sb-revealed {
+  filter: none;
+}

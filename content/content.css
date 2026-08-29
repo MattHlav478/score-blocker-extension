@@ -48,3 +48,19 @@
 .sb-hover-reveal .sb-thumb-blurred:hover {
   filter: none;
 }
+
+/* Match Day: a whole block hidden, rather than a substring inside it. */
+
+.sb-block-masked {
+  filter: blur(6px);
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.sb-block-masked.sb-revealed {
+  filter: none;
+}
+
+.sb-hover-reveal .sb-block-masked:hover {
+  filter: none;
+}

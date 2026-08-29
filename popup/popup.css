@@ -5,6 +5,7 @@
   --muted: #656d76;
   --line: #d8dee4;
   --accent: #1a7f37;
+  --warn: #bf8700;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -14,6 +15,7 @@
     --muted: #9198a1;
     --line: #30363d;
     --accent: #3fb950;
+    --warn: #d29922;
   }
 }
 
@@ -124,4 +126,27 @@ body {
 
 .sb-foot a:hover {
   text-decoration: underline;
+}
+
+/* Match Day sits under the master switch and is amber to read as a mode, not
+   a second on/off. It is inert while the master switch is off. */
+
+.sb-toggle-match {
+  margin-top: 10px;
+}
+
+.sb-toggle-match input:checked + .sb-track {
+  background: var(--warn);
+}
+
+.sb-toggle[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.sb-match-note {
+  margin: 8px 0 0;
+  padding-left: 50px;
+  font-size: 11px;
+  color: var(--warn);
 }
