@@ -8,6 +8,7 @@
 importScripts('common/defaults.js');
 
 const DYNAMIC_SCRIPT_ID = 'sb-dynamic-sites';
+const PREBLUR_SCRIPT_ID = 'sb-preblur';
 
 function getSettings() {
   return new Promise((resolve) => {
@@ -71,24 +72,70 @@ async function syncDynamicScripts() {
   }
 }
 
+/**
+ * Register the document_start pre-blur stylesheet.
+ *
+ * It has to be registered rather than declared in the manifest: manifest CSS is
+ * injected unconditionally, which would blur pages for a moment even with the
+ * extension switched off. Registering only while enabled keeps "off" meaning
+ * no page changes at all.
+ */
+async function syncPreBlur() {
+  const settings = await getSettings();
+
+  try {
+    const existing = await chrome.scripting.getRegisteredContentScripts({
+      ids: [PREBLUR_SCRIPT_ID]
+    });
+    if (existing.length) {
+      await chrome.scripting.unregisterContentScripts({ ids: [PREBLUR_SCRIPT_ID] });
+    }
+  } catch (err) {
+    // Nothing registered yet.
+  }
+
+  if (!settings.enabled || !settings.preBlur) return;
+  try {
+    await chrome.scripting.registerContentScripts([
+      {
+        id: PREBLUR_SCRIPT_ID,
+        matches: SB_BUILTIN_SITES,
+        css: ['content/preblur.css'],
+        runAt: 'document_start',
+        persistAcrossSessions: true
+      }
+    ]);
+  } catch (err) {
+    console.warn('Score Blocker: could not register the pre-blur stylesheet', err);
+  }
+}
+
 chrome.runtime.onInstalled.addListener(async () => {
   const stored = await new Promise((resolve) => chrome.storage.sync.get(null, resolve));
-  // Only write keys that are missing, so an update never resets tuning.
   const merged = sbMergeSettings(stored);
-  await chrome.storage.sync.set(merged);
+  // Seed only the keys that are missing. Writing the whole object back would
+  // reset tuning on update, and would clobber any write racing with this one.
+  const missing = {};
+  for (const [key, value] of Object.entries(merged)) {
+    if (!(key in stored)) missing[key] = value;
+  }
+  if (Object.keys(missing).length) await chrome.storage.sync.set(missing);
   await updateBadge(merged);
   await syncDynamicScripts();
+  await syncPreBlur();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   await updateBadge();
   await syncDynamicScripts();
+  await syncPreBlur();
 });
 
 chrome.storage.onChanged.addListener(async (changes, area) => {
   if (area !== 'sync') return;
   if (changes.enabled) await updateBadge();
   if (changes.sites) await syncDynamicScripts();
+  if (changes.enabled || changes.preBlur) await syncPreBlur();
 });
 
 chrome.permissions.onAdded.addListener(() => syncDynamicScripts());
@@ -102,3 +149,4 @@ chrome.action.onClicked.addListener(async () => {
 });
 
 updateBadge();
+syncPreBlur();

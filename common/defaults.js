@@ -78,6 +78,9 @@ const SB_DEFAULTS = {
   // Reveal a mask by hovering it, not just by clicking. Off by default so the
   // cursor drifting across a page of results can't spoil anything.
   revealOnHover: false,
+  // Blur result text from the very first paint, before the scanner has run, so
+  // a score is never briefly readable while the page loads.
+  preBlur: true,
   keywords: SB_DEFAULT_KEYWORDS.slice(),
   teams: SB_DEFAULT_TEAMS.slice(),
   // Extra match patterns added at runtime from the options page. The built-in
@@ -96,6 +99,7 @@ function sbMergeSettings(stored) {
       : SB_DEFAULTS.keywordWindow,
     revealOnHover:
       typeof raw.revealOnHover === 'boolean' ? raw.revealOnHover : SB_DEFAULTS.revealOnHover,
+    preBlur: typeof raw.preBlur === 'boolean' ? raw.preBlur : SB_DEFAULTS.preBlur,
     keywords: Array.isArray(raw.keywords) ? raw.keywords : SB_DEFAULTS.keywords.slice(),
     teams: Array.isArray(raw.teams) ? raw.teams : SB_DEFAULTS.teams.slice(),
     sites: Array.isArray(raw.sites) ? raw.sites : SB_DEFAULTS.sites.slice()
