@@ -9,6 +9,8 @@ importScripts('common/defaults.js');
 
 const DYNAMIC_SCRIPT_ID = 'sb-dynamic-sites';
 const PREBLUR_SCRIPT_ID = 'sb-preblur';
+const LOCKDOWN_SCRIPT_ID = 'sb-lockdown';
+const TITLEGUARD_SCRIPT_ID = 'sb-titleguard';
 
 function getSettings() {
   return new Promise((resolve) => {
@@ -73,40 +75,69 @@ async function syncDynamicScripts() {
 }
 
 /**
- * Register the document_start pre-blur stylesheet.
+ * Register the document_start stylesheets that have to beat the first paint.
  *
- * It has to be registered rather than declared in the manifest: manifest CSS is
- * injected unconditionally, which would blur pages for a moment even with the
- * extension switched off. Registering only while enabled keeps "off" meaning
- * no page changes at all.
+ * Neither can be declared in the manifest: manifest CSS is injected
+ * unconditionally, which would blur pages with the extension switched off, or
+ * with Match Day off. Registering them only while their setting is on keeps
+ * "off" meaning no page changes at all.
+ *
+ *   sb-preblur     brief blur released once the scan finishes
+ *   sb-lockdown    Match Day blur of every description, held until it ends
+ *   sb-titleguard  masks a score in the tab title before content.js can run
+ *
+ * The title guard acts without reading settings first, which is only safe
+ * because it is registered exclusively while those settings say it should run.
  */
-async function syncPreBlur() {
+async function syncRegisteredStyles() {
   const settings = await getSettings();
 
-  try {
-    const existing = await chrome.scripting.getRegisteredContentScripts({
-      ids: [PREBLUR_SCRIPT_ID]
+  const wanted = [];
+  if (settings.enabled && settings.preBlur) {
+    wanted.push({
+      id: PREBLUR_SCRIPT_ID,
+      matches: SB_BUILTIN_SITES,
+      css: ['content/preblur.css'],
+      runAt: 'document_start',
+      persistAcrossSessions: true
     });
-    if (existing.length) {
-      await chrome.scripting.unregisterContentScripts({ ids: [PREBLUR_SCRIPT_ID] });
-    }
+  }
+  if (settings.enabled && settings.matchDay && settings.strict.blurDescriptions) {
+    wanted.push({
+      id: LOCKDOWN_SCRIPT_ID,
+      matches: SB_BUILTIN_SITES,
+      css: ['content/lockdown.css'],
+      runAt: 'document_start',
+      persistAcrossSessions: true
+    });
+  }
+  if (settings.enabled && (settings.maskTabTitle || settings.matchDay)) {
+    // Extra sites the user has granted get the guard too - a club site putting
+    // the score in its tab title is exactly the case it exists for.
+    const granted = await grantedSites(settings.sites);
+    wanted.push({
+      id: TITLEGUARD_SCRIPT_ID,
+      matches: SB_BUILTIN_SITES.concat(granted),
+      js: ['content/titleguard.js'],
+      runAt: 'document_start',
+      persistAcrossSessions: true
+    });
+  }
+
+  const ids = [PREBLUR_SCRIPT_ID, LOCKDOWN_SCRIPT_ID, TITLEGUARD_SCRIPT_ID];
+  try {
+    const existing = await chrome.scripting.getRegisteredContentScripts({ ids });
+    const stale = existing.map((script) => script.id);
+    if (stale.length) await chrome.scripting.unregisterContentScripts({ ids: stale });
   } catch (err) {
     // Nothing registered yet.
   }
 
-  if (!settings.enabled || !settings.preBlur) return;
+  if (!wanted.length) return;
   try {
-    await chrome.scripting.registerContentScripts([
-      {
-        id: PREBLUR_SCRIPT_ID,
-        matches: SB_BUILTIN_SITES,
-        css: ['content/preblur.css'],
-        runAt: 'document_start',
-        persistAcrossSessions: true
-      }
-    ]);
+    await chrome.scripting.registerContentScripts(wanted);
   } catch (err) {
-    console.warn('Score Blocker: could not register the pre-blur stylesheet', err);
+    console.warn('Score Blocker: could not register document_start styles', err);
   }
 }
 
@@ -122,24 +153,39 @@ chrome.runtime.onInstalled.addListener(async () => {
   if (Object.keys(missing).length) await chrome.storage.sync.set(missing);
   await updateBadge(merged);
   await syncDynamicScripts();
-  await syncPreBlur();
+  await syncRegisteredStyles();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   await updateBadge();
   await syncDynamicScripts();
-  await syncPreBlur();
+  await syncRegisteredStyles();
 });
 
 chrome.storage.onChanged.addListener(async (changes, area) => {
   if (area !== 'sync') return;
   if (changes.enabled) await updateBadge();
   if (changes.sites) await syncDynamicScripts();
-  if (changes.enabled || changes.preBlur) await syncPreBlur();
+  if (
+    changes.enabled ||
+    changes.preBlur ||
+    changes.matchDay ||
+    changes.strict ||
+    changes.maskTabTitle ||
+    changes.sites
+  ) {
+    await syncRegisteredStyles();
+  }
 });
 
-chrome.permissions.onAdded.addListener(() => syncDynamicScripts());
-chrome.permissions.onRemoved.addListener(() => syncDynamicScripts());
+chrome.permissions.onAdded.addListener(() => {
+  syncDynamicScripts();
+  syncRegisteredStyles();
+});
+chrome.permissions.onRemoved.addListener(() => {
+  syncDynamicScripts();
+  syncRegisteredStyles();
+});
 
 // The popup owns the toggle UI, but keep a keyboard/command-free fallback:
 // if the popup ever fails to open, clicking the icon still flips the switch.
@@ -149,4 +195,4 @@ chrome.action.onClicked.addListener(async () => {
 });
 
 updateBadge();
-syncPreBlur();
+syncRegisteredStyles();

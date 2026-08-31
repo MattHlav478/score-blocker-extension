@@ -22,6 +22,8 @@
         <label class="row"><input type="checkbox" id="rule-vsPattern" /> <span>"vs" pattern <em>— "Team A vs Team B 2-1" style video titles</em></span></label>
         <label class="row"><input type="checkbox" id="rule-thumbnailBlur" /> <span>Blur the thumbnail too <em>— partial mitigation for scores baked into the image; not OCR</em></span></label>
         <label class="row"><input type="checkbox" id="rule-scanComments" /> <span>Also scan YouTube comments <em>— noisy, off by default</em></span></label>
+        <label class="row"><input type="checkbox" id="maskTabTitle" /> <span>Hide scores in the browser tab title <em>&mdash; a tab title can't be blurred, so the score is replaced with &bull;&bull;&bull; and restored when you switch the extension off</em></span></label>
+        <label class="row"><input type="checkbox" id="blurVideos" /> <span>Blur all videos <em>&mdash; every player, embed and poster frame, for sites that put the score in the still image; playing a video reveals it. Match Day switches this on regardless</em></span></label>
         <label class="row"><input type="checkbox" id="preBlur" /> <span>Blur results while the page loads <em>— hides scores from the first paint, so nothing is briefly readable; results sharpen once scanned</em></span></label>
         <label class="row"><input type="checkbox" id="revealOnHover" /> <span>Reveal on hover <em>— off by default so a drifting cursor can't spoil a result</em></span></label>
 
@@ -30,6 +32,28 @@
           <input type="number" id="keywordWindow" min="0" max="400" step="10" />
           <em>characters either side of a score to search for a keyword. Smaller = fewer false positives.</em>
         </label>
+      </section>
+
+      <section>
+        <h2>Match day</h2>
+        <p class="hint">
+          The aggressive layers. They run only while the Match Day switch in the popup is on —
+          with it off, nothing here has any effect.
+        </p>
+        <label class="row"><input type="checkbox" id="strict-blurDescriptions" /> <span>Blur all description text <em>— every result snippet and description, click any one to read it</em></span></label>
+        <label class="row"><input type="checkbox" id="strict-spoilerWords" /> <span>Blur blocks containing spoiler words <em>— hides the whole line, since hiding one word leaves the rest of the sentence</em></span></label>
+        <label class="row"><input type="checkbox" id="strict-thumbnails" /> <span>Blur thumbnails on sports results <em>— celebration shots give a result away; limited to sports-looking results so the page stays navigable</em></span></label>
+        <label class="row"><input type="checkbox" id="strict-blurComments" /> <span>Blur the YouTube comments section <em>— hidden as one block rather than scanned line by line</em></span></label>
+      </section>
+
+      <section>
+        <h2>Spoiler words</h2>
+        <p class="hint">
+          One per line or comma-separated. A block containing any of these is hidden whole while
+          Match Day is on. Deliberately broad — false positives cost one click.
+        </p>
+        <textarea id="spoilerKeywords" rows="8" spellcheck="false"></textarea>
+        <button type="button" class="link" data-reset="spoilerKeywords">Reset to defaults</button>
       </section>
 
       <section>

@@ -10,9 +10,14 @@
     'scanComments'
   ];
 
+  const STRICT_IDS = ['blurDescriptions', 'spoilerWords', 'thumbnails', 'blurComments'];
+
   const el = (id) => document.getElementById(id);
   const statusEl = el('status');
   let sites = [];
+  // Settings this page does not edit still have to survive a save, since the
+  // save writes the whole object back.
+  let untouched = { matchDay: false };
 
   function parseList(text) {
     return text
@@ -108,13 +113,20 @@
   }
 
   function render(settings) {
+    untouched = { matchDay: settings.matchDay };
     el('enabled').checked = settings.enabled;
     el('revealOnHover').checked = settings.revealOnHover;
     el('preBlur').checked = settings.preBlur;
+    el('maskTabTitle').checked = settings.maskTabTitle;
+    el('blurVideos').checked = settings.blurVideos;
     el('keywordWindow').value = settings.keywordWindow;
     for (const rule of RULE_IDS) {
       el(`rule-${rule}`).checked = Boolean(settings.rules[rule]);
     }
+    for (const key of STRICT_IDS) {
+      el(`strict-${key}`).checked = Boolean(settings.strict[key]);
+    }
+    el('spoilerKeywords').value = settings.spoilerKeywords.join('\n');
     el('teams').value = settings.teams.join('\n');
     el('keywords').value = settings.keywords.join('\n');
     sites = settings.sites.slice();
@@ -124,10 +136,18 @@
   function collect() {
     const rules = {};
     for (const rule of RULE_IDS) rules[rule] = el(`rule-${rule}`).checked;
+    const strict = {};
+    for (const key of STRICT_IDS) strict[key] = el(`strict-${key}`).checked;
     return {
+      // Match Day lives in the popup; carry it through untouched.
+      matchDay: untouched.matchDay,
+      strict,
+      spoilerKeywords: parseList(el('spoilerKeywords').value),
       enabled: el('enabled').checked,
       revealOnHover: el('revealOnHover').checked,
       preBlur: el('preBlur').checked,
+      maskTabTitle: el('maskTabTitle').checked,
+      blurVideos: el('blurVideos').checked,
       keywordWindow: Number(el('keywordWindow').value),
       rules,
       teams: parseList(el('teams').value),
@@ -155,7 +175,12 @@
   for (const button of document.querySelectorAll('[data-reset]')) {
     button.addEventListener('click', () => {
       const which = button.dataset.reset;
-      const defaults = which === 'teams' ? SB_DEFAULT_TEAMS : SB_DEFAULT_KEYWORDS;
+      const defaults =
+        which === 'teams'
+          ? SB_DEFAULT_TEAMS
+          : which === 'spoilerKeywords'
+            ? SB_DEFAULT_SPOILER_KEYWORDS
+            : SB_DEFAULT_KEYWORDS;
       el(which).value = defaults.join('\n');
       setStatus('Reset — press Save to apply.');
     });

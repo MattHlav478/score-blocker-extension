@@ -32,6 +32,64 @@ Every rule, the keyword window, the team list, the keyword list, hover-reveal, a
 editable on the options page. Settings live in `chrome.storage.sync`, and every change applies to
 already-open tabs immediately — no reload.
 
+## Match Day
+
+Scores are not the only spoiler. "Chelsea stun Arsenal with late winner" gives the result away
+with no digits in it at all, and so does a thumbnail of players celebrating. **Match Day** is a
+second switch in the popup for exactly those: flip it when you go looking for highlights.
+
+While it is on:
+
+| Layer | What it hides | When |
+| --- | --- | --- |
+| Descriptions | Every result snippet and description, click any one to read it | Always |
+| Spoiler words | The **whole block** containing a word like "stun", "collapse", "comeback", "red card" | Always |
+| Thumbnails | Images on results that look sports-related | Sports heuristic |
+| Comments | The YouTube comments section, hidden as one block | YouTube |
+
+Two deliberate asymmetries:
+
+- **Descriptions blur unconditionally, thumbnails do not.** A blurred snippet costs one click to
+  read; a page where every thumbnail is blurred cannot be navigated at all. So images stay gated on
+  whether the result looks sports-related — by team name, sports keyword, or the search query.
+- **A spoiler word hides its whole block, not the word.** Blurring only "stun" in "Chelsea stun
+  Arsenal" leaves the rest of the sentence, which gives it away regardless.
+
+While Match Day is off, the extension behaves exactly as it does without the feature — that is
+covered by the first check in `test/matchday.mjs`, not left to chance. The layers and the spoiler
+vocabulary are all editable on the options page.
+
+Match Day has no expiry: left on, it keeps blurring. The amber toggle and the note under it are
+there to make that obvious at a glance.
+
+## Tab titles and videos
+
+Two spoilers the page-text scanner cannot reach:
+
+**The browser tab.** A tab title cannot be blurred — it is browser chrome, not page content — so
+the score in it is replaced with `•••` instead: "Chelsea 2-1 Arsenal | Highlights" becomes
+"Chelsea ••• Arsenal | Highlights", which keeps the tab identifiable among a dozen others. The
+original is restored the moment the extension is switched off. On by default.
+
+`content/titleguard.js` handles the same problem the pre-blur solves for page text: `content.js`
+runs at `document_end`, by which point the title has been in the tab strip for a measured ~409ms.
+The guard runs at `document_start` instead, and because the service worker registers it only while
+the setting is on, its presence is already permission to act — so it masks immediately rather than
+waiting for an async settings read. It cannot see your custom word lists, so it uses a conservative
+built-in rule and hands the true original title to `content.js`, which re-derives the mask from your
+real settings and corrects it either way.
+
+**Videos.** Some sites put the score in a video's poster frame, where there is no text to scan at
+all. "Blur all videos" covers `<video>` elements (poster included) and `<iframe>` video embeds,
+skipping anything under 100px so logos and tracking pixels are left alone. Click to reveal, or just
+press play — playing a blurred video reveals it, since watching one blurred is pointless. Off by
+default; Match Day switches it on regardless.
+
+For a site other than Google or YouTube — a club's own site, say — you have to add it in the options
+page first, which is what triggers Chrome's permission prompt for that origin. The extension cannot
+act on a site it has never been granted, so this has to be done **before** you visit, not after you
+have been spoiled.
+
 ## No flash of unblurred score
 
 A content script cannot run before the browser paints, so a naive extension shows the score for
@@ -82,17 +140,33 @@ common/defaults.js    shared settings schema (content script, popup, options, wo
 content/content.js    scanning, detection, masking, MutationObserver, SPA navigation
 content/content.css   blur + reveal styles
 content/preblur.css   document_start blur, so a score is never briefly readable
+content/lockdown.css  document_start blur of every description, while Match Day is on
+content/titleguard.js document_start masking of a score in the browser tab title
 popup/                on/off toggle and live "X scores hidden" count
 options/              rules, keyword window, team/keyword lists, extra sites
 test/e2e.mjs          end-to-end tests against the real extension in Chromium
 test/preblur.mjs      frame-by-frame check that a score is never painted readable
+test/matchday.mjs     the Match Day layers, and that they vanish when it is off
+test/tabtitle.mjs     tab-title masking and video blurring, on a club-site fixture
 ```
+
+## Publishing
+
+`STORE_LISTING.md` holds the Chrome Web Store submission copy — the permission justifications, the
+single-purpose statement, the data-usage answers and the listing text — kept in the repo so it stays
+in sync with the manifest it describes. `PRIVACY.md` is the privacy policy the dashboard requires a
+URL for.
+
+If you add or change a permission, update its justification in `STORE_LISTING.md` in the same
+commit. A later review that contradicts an earlier one is worse than no submission.
 
 ## Tests
 
 ```
 node test/e2e.mjs
 node test/preblur.mjs
+node test/matchday.mjs
+node test/tabtitle.mjs
 ```
 
 Loads the real extension into Chromium against local fixtures that mimic Google and YouTube
@@ -105,5 +179,9 @@ original text with zero leftover nodes, and the popup/options pages reading and 
 animation frame, and asserts that no frame ever painted the score unmasked and unblurred — plus
 that the fail-safe lifts the blur without a script, and that a disabled extension registers and
 injects nothing.
+
+`matchday.mjs` also guards the one unavoidable duplication in the project: the description
+selector list exists as JS in `common/defaults.js` and as CSS in `content/lockdown.css`, because
+CSS cannot read JS. The test parses the stylesheet and fails if the two ever drift apart.
 
 Requires Playwright (`npm i -g playwright` or a local install); the runner resolves either.

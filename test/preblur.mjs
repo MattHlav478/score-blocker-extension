@@ -209,7 +209,42 @@ async function sampleFrames(context, loads = 4) {
   await context.close();
 }
 
-// ---- 4. the deadman switch in the stylesheet -------------------------------
+// ---- 4. Match Day descriptions are never painted readable ------------------
+{
+  const { context, worker } = await launch('matchday');
+  await worker.evaluate(() => new Promise((r) => chrome.storage.sync.set({ matchDay: true }, r)));
+  await new Promise((r) => setTimeout(r, 900));
+
+  let spoiled = 0;
+  let frames = 0;
+  for (let i = 0; i < 3; i++) {
+    const page = await context.newPage();
+    await page.addInitScript(() => {
+      window.__spoiled = 0;
+      window.__frames = 0;
+      const tick = () => {
+        const desc = document.querySelector('#center_col .VwiC3b');
+        if (desc) {
+          window.__frames++;
+          if (!getComputedStyle(desc).filter.includes('blur')) window.__spoiled++;
+        }
+        if (performance.now() < 3000) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    await page.goto(`http://localhost:${PORT}/`);
+    await page.waitForFunction(() => performance.now() > 2000, null, { timeout: 8000 });
+    const sample = await page.evaluate(() => ({ spoiled: window.__spoiled, frames: window.__frames }));
+    spoiled += sample.spoiled;
+    frames += sample.frames;
+    await page.close();
+  }
+  check('match day: a description is never readable in any painted frame',
+    spoiled === 0 && frames > 0, `${spoiled} readable frames of ${frames} sampled`);
+  await context.close();
+}
+
+// ---- 5. the deadman switch in the stylesheet -------------------------------
 {
   const { context } = await launch('deadman');
   const page = await context.newPage();
