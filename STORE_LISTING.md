@@ -40,11 +40,12 @@ is a static CSS or JS file bundled in the package.
 
 It is required for three things:
 
-1. **Conditionally injecting CSS at `document_start`.** A content script cannot run before the
-   browser paints, so a score would be briefly readable while a page loads. Two stylesheets
-   (`content/preblur.css` and `content/lockdown.css`) blur result text before the first paint.
-   These cannot be declared in the manifest, because manifest CSS is injected unconditionally —
-   that would blur pages even when the extension is switched off. Registering them from the service
+1. **Conditionally injecting two stylesheets and one small script at `document_start`.** A content
+   script cannot run before the browser paints, so a score would be briefly readable while a page
+   loads — both in the page (`content/preblur.css`, `content/lockdown.css`) and in the browser tab
+   title (`content/titleguard.js`, which masks the score in `document.title`). None of these can be
+   declared in the manifest, because manifest content scripts are injected unconditionally — that
+   would act on pages even when the extension is switched off. Registering them from the service
    worker only while the relevant setting is on is precisely what makes "off" mean no page changes
    at all.
 2. **Registering the content script for user-added sites**, after the user has granted permission

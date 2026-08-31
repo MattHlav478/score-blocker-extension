@@ -19,6 +19,11 @@
   const BLOCK_MASK_CLASS = 'sb-block-masked';
   /** Longest text a single result block is expected to hold. */
   const MAX_BLOCK_TEXT = 600;
+  const VIDEO_BLUR_CLASS = 'sb-video-blurred';
+  /** What a masked run of title text is replaced with. */
+  const TITLE_PLACEHOLDER = '\u2022\u2022\u2022';
+  /** Ignore players smaller than this; they are icons or tracking pixels. */
+  const MIN_VIDEO_PX = 100;
   const HOVER_CLASS = 'sb-hover-reveal';
   const SCAN_DEBOUNCE_MS = 150;
 
@@ -67,10 +72,26 @@
   const maskedSpans = new Set();
   const maskedBlocks = new Set();
   const blurredThumbs = new Set();
+  const blurredVideos = new Set();
+
+  // Tab title state. originalTitle is what the page last set for itself;
+  // appliedTitle is what we wrote, so our own write is not mistaken for the
+  // page changing the title underneath us.
+  let originalTitle = null;
+  let appliedTitle = null;
+  let titleObserver = null;
 
   /** True when the aggressive Match Day layers should run. */
   function inMatchDay() {
     return Boolean(settings && settings.matchDay);
+  }
+
+  function titleMaskingOn() {
+    return Boolean(settings && (settings.maskTabTitle || settings.matchDay));
+  }
+
+  function videoBlurOn() {
+    return Boolean(settings && (settings.blurVideos || settings.matchDay));
   }
 
   // ---------------------------------------------------------------- detection
@@ -305,6 +326,139 @@
     }
   }
 
+  // --------------------------------------------------------------- tab title
+
+  /**
+   * Replace score text in a title string with a placeholder.
+   *
+   * The tab strip is browser chrome, so there is nothing to blur - the only
+   * lever is document.title itself. Masking just the matched run keeps the tab
+   * distinguishable from the nine others next to it.
+   */
+  function maskTitleText(title) {
+    if (!title) return title;
+    const ranges = findMaskRanges(title, title, 0);
+    if (!ranges.length) return title;
+    let out = '';
+    let cursor = 0;
+    for (const range of ranges) {
+      out += title.slice(cursor, range.start) + TITLE_PLACEHOLDER;
+      cursor = range.end;
+    }
+    return out + title.slice(cursor);
+  }
+
+  /**
+   * Take over from the document_start guard.
+   *
+   * The guard masks with a coarse built-in rule and cannot see the user's own
+   * word lists, so it may have masked something these settings would leave
+   * alone. It hands over the true original title; this re-derives the mask from
+   * it and corrects the guard's version either way.
+   */
+  function adoptTitleGuard() {
+    const guard = window.__sbTitleGuard;
+    if (!guard) return;
+    if (typeof guard.stop === 'function') guard.stop();
+    if (guard.original === null) return;
+
+    const masked = titleMaskingOn() ? maskTitleText(guard.original) : guard.original;
+    if (masked === guard.original) {
+      // The full rules say this title is clean; undo the guard's caution.
+      if (document.title === guard.applied) document.title = guard.original;
+      originalTitle = null;
+      appliedTitle = null;
+    } else {
+      originalTitle = guard.original;
+      appliedTitle = masked;
+      if (document.title !== masked) document.title = masked;
+    }
+    guard.original = null;
+    guard.applied = null;
+  }
+
+  function applyTitleMask() {
+    if (!active || !titleMaskingOn()) return;
+    const current = document.title;
+    // Our own write coming back around; nothing to do.
+    if (current === appliedTitle) return;
+    const masked = maskTitleText(current);
+    if (masked === current) {
+      // The page's title is clean. Forget any earlier masking so a later
+      // restore cannot resurrect a stale title.
+      originalTitle = null;
+      appliedTitle = null;
+      return;
+    }
+    originalTitle = current;
+    appliedTitle = masked;
+    document.title = masked;
+  }
+
+  function restoreTitle() {
+    // Only put the original back if ours is still the title on display; the
+    // page may have moved on to something else entirely.
+    if (originalTitle !== null && document.title === appliedTitle) {
+      document.title = originalTitle;
+    }
+    originalTitle = null;
+    appliedTitle = null;
+  }
+
+  function watchTitle() {
+    const titleEl = document.querySelector('title');
+    if (!titleEl || titleObserver) return;
+    // Single-page apps rewrite the title on navigation without touching body.
+    titleObserver = new MutationObserver(() => applyTitleMask());
+    titleObserver.observe(titleEl, { childList: true, characterData: true, subtree: true });
+  }
+
+  // ------------------------------------------------------------------ videos
+
+  /**
+   * Blur video players, embeds and their poster frames.
+   *
+   * The case this exists for: a club's own site embeds highlights whose poster
+   * frame is a still of the celebration, which no amount of text scanning can
+   * catch.
+   */
+  function blurVideos(root) {
+    if (!videoBlurOn()) return 0;
+    const scope = root && root.nodeType === Node.ELEMENT_NODE ? root : document.body;
+    const found = new Set(scope.querySelectorAll(SB_VIDEO_SELECTOR));
+    if (scope.matches && scope.matches(SB_VIDEO_SELECTOR)) found.add(scope);
+
+    let blurred = 0;
+    for (const el of found) {
+      if (el.classList.contains(VIDEO_BLUR_CLASS)) continue;
+      const box = el.getBoundingClientRect();
+      // A zero box usually means not laid out yet, which is worth blurring
+      // anyway; a small one is an icon or a tracking pixel.
+      if (box.width && box.width < MIN_VIDEO_PX) continue;
+      el.classList.add(VIDEO_BLUR_CLASS);
+      if (!el.title) el.title = 'Score Blocker: hidden - click to reveal';
+      blurredVideos.add(el);
+      blurred++;
+    }
+    return blurred;
+  }
+
+  /** Watching a blurred video is pointless, so playing one reveals it. */
+  function onPlay(event) {
+    const el = event.target;
+    if (el instanceof Element && el.classList.contains(VIDEO_BLUR_CLASS)) {
+      el.classList.add(REVEALED_CLASS);
+    }
+  }
+
+  function unblurVideos() {
+    for (const el of blurredVideos) {
+      el.classList.remove(VIDEO_BLUR_CLASS, REVEALED_CLASS);
+      if (el.title && el.title.startsWith('Score Blocker')) el.removeAttribute('title');
+    }
+    blurredVideos.clear();
+  }
+
   function blurThumbnails(fromElement, force) {
     if (!fromElement) return;
     if (!force && !settings.rules.thumbnailBlur) return;
@@ -335,6 +489,8 @@
     }
     maskedSpans.clear();
     unmaskBlocks();
+    unblurVideos();
+    restoreTitle();
     for (const img of blurredThumbs) {
       img.classList.remove(THUMB_CLASS, REVEALED_CLASS);
       if (img.title && img.title.startsWith('Score Blocker')) img.removeAttribute('title');
@@ -524,7 +680,9 @@
         masked += scanRoot(target);
       }
       masked += applyMatchDayLayers(root);
+      masked += blurVideos(root);
     }
+    applyTitleMask();
     if (masked > 0) reportCount();
   }
 
@@ -566,6 +724,9 @@
   function onNavigate() {
     if (!active) return;
     pageSportsCache = null; // A new query may not be sports-related at all.
+    // The new page's title is a fresh one to judge, not ours to restore.
+    originalTitle = null;
+    appliedTitle = null;
     pendingFullScan = true;
     scheduleScan(null);
   }
@@ -577,6 +738,7 @@
     const block = target.closest(`.${BLOCK_MASK_CLASS}`);
     if (block) return block;
     if (target.classList && target.classList.contains(THUMB_CLASS)) return target;
+    if (target.classList && target.classList.contains(VIDEO_BLUR_CLASS)) return target;
     // Descriptions blurred by the document_start stylesheet carry no class of
     // their own, so they are matched by the same selector list the CSS uses.
     if (inMatchDay() && settings.strict.blurDescriptions) {
@@ -618,8 +780,13 @@
     window.addEventListener('yt-navigate-finish', onNavigate);
     window.addEventListener('popstate', onNavigate);
 
+    // Capture phase: a play event does not bubble.
+    document.addEventListener('play', onPlay, true);
+
     observer = new MutationObserver(onMutations);
     observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    adoptTitleGuard();
+    watchTitle();
 
     runScan([document.body]);
     releasePreBlur();
@@ -633,6 +800,10 @@
       observer.disconnect();
       observer = null;
     }
+    if (titleObserver) {
+      titleObserver.disconnect();
+      titleObserver = null;
+    }
     if (scanTimer) {
       clearTimeout(scanTimer);
       scanTimer = null;
@@ -641,6 +812,7 @@
     pendingFullScan = false;
     document.removeEventListener('click', onClick, true);
     document.removeEventListener('keydown', onKeydown, true);
+    document.removeEventListener('play', onPlay, true);
     window.removeEventListener('yt-navigate-finish', onNavigate);
     window.removeEventListener('popstate', onNavigate);
     document.documentElement.classList.remove(HOVER_CLASS);
@@ -670,7 +842,7 @@
 
   /** Masked scores plus whole blocks hidden by Match Day. */
   function hiddenCount() {
-    return maskedSpans.size + maskedBlocks.size;
+    return maskedSpans.size + maskedBlocks.size + blurredVideos.size;
   }
 
   function reportCount() {

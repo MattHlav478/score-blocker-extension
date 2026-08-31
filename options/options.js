@@ -117,6 +117,8 @@
     el('enabled').checked = settings.enabled;
     el('revealOnHover').checked = settings.revealOnHover;
     el('preBlur').checked = settings.preBlur;
+    el('maskTabTitle').checked = settings.maskTabTitle;
+    el('blurVideos').checked = settings.blurVideos;
     el('keywordWindow').value = settings.keywordWindow;
     for (const rule of RULE_IDS) {
       el(`rule-${rule}`).checked = Boolean(settings.rules[rule]);
@@ -144,6 +146,8 @@
       enabled: el('enabled').checked,
       revealOnHover: el('revealOnHover').checked,
       preBlur: el('preBlur').checked,
+      maskTabTitle: el('maskTabTitle').checked,
+      blurVideos: el('blurVideos').checked,
       keywordWindow: Number(el('keywordWindow').value),
       rules,
       teams: parseList(el('teams').value),

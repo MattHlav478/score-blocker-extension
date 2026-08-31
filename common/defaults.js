@@ -30,6 +30,25 @@ const SB_DESCRIPTION_SELECTORS = [
 ];
 const SB_DESCRIPTION_SELECTOR = SB_DESCRIPTION_SELECTORS.join(', ');
 
+/**
+ * Video surfaces worth blurring: real players, and the iframe embeds sites use
+ * to host one. A poster frame is part of its <video>, so it blurs with it.
+ */
+const SB_VIDEO_SELECTORS = [
+  'video',
+  'iframe[allowfullscreen]',
+  'iframe[allow*="fullscreen"]',
+  'iframe[src*="youtube.com"]',
+  'iframe[src*="youtube-nocookie.com"]',
+  'iframe[src*="youtu.be"]',
+  'iframe[src*="vimeo.com"]',
+  'iframe[src*="dailymotion.com"]',
+  'iframe[src*="brightcove"]',
+  'iframe[src*="jwplayer"]',
+  'iframe[src*="streamable.com"]'
+];
+const SB_VIDEO_SELECTOR = SB_VIDEO_SELECTORS.join(', ');
+
 /** The comment surfaces Match Day blurs wholesale rather than word by word. */
 const SB_COMMENTS_SELECTORS = ['ytd-comments#comments', '#comments ytd-item-section-renderer'];
 const SB_COMMENTS_SELECTOR = SB_COMMENTS_SELECTORS.join(', ');
@@ -152,6 +171,13 @@ const SB_DEFAULTS = {
   // Blur result text from the very first paint, before the scanner has run, so
   // a score is never briefly readable while the page loads.
   preBlur: true,
+  // Mask a score in the browser tab title. A tab title cannot be blurred - it
+  // is browser chrome, not page content - so the matched text is replaced with
+  // a placeholder and the original restored when the extension is switched off.
+  maskTabTitle: true,
+  // Blur every video player, embed and poster frame on the page. Aggressive
+  // enough to be off by default; Match Day switches it on regardless.
+  blurVideos: false,
   // Match Day: the manual lockdown switch. Off means the extension behaves
   // exactly as it does without this feature.
   matchDay: false,
@@ -185,6 +211,9 @@ function sbMergeSettings(stored) {
     revealOnHover:
       typeof raw.revealOnHover === 'boolean' ? raw.revealOnHover : SB_DEFAULTS.revealOnHover,
     preBlur: typeof raw.preBlur === 'boolean' ? raw.preBlur : SB_DEFAULTS.preBlur,
+    maskTabTitle:
+      typeof raw.maskTabTitle === 'boolean' ? raw.maskTabTitle : SB_DEFAULTS.maskTabTitle,
+    blurVideos: typeof raw.blurVideos === 'boolean' ? raw.blurVideos : SB_DEFAULTS.blurVideos,
     matchDay: typeof raw.matchDay === 'boolean' ? raw.matchDay : SB_DEFAULTS.matchDay,
     strict: Object.assign({}, SB_DEFAULTS.strict, raw.strict || {}),
     keywords: Array.isArray(raw.keywords) ? raw.keywords : SB_DEFAULTS.keywords.slice(),
@@ -211,5 +240,7 @@ if (typeof self !== 'undefined') {
   self.SB_DESCRIPTION_SELECTOR = SB_DESCRIPTION_SELECTOR;
   self.SB_COMMENTS_SELECTORS = SB_COMMENTS_SELECTORS;
   self.SB_COMMENTS_SELECTOR = SB_COMMENTS_SELECTOR;
+  self.SB_VIDEO_SELECTORS = SB_VIDEO_SELECTORS;
+  self.SB_VIDEO_SELECTOR = SB_VIDEO_SELECTOR;
   self.sbMergeSettings = sbMergeSettings;
 }

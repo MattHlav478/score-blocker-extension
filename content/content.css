@@ -64,3 +64,20 @@
 .sb-hover-reveal .sb-block-masked:hover {
   filter: none;
 }
+
+/* Video players, embeds and poster frames hidden by the "blur all videos"
+   option. Playing one reveals it, since watching a blurred video is pointless. */
+
+.sb-video-blurred {
+  filter: blur(24px);
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.sb-video-blurred.sb-revealed {
+  filter: none;
+}
+
+.sb-hover-reveal .sb-video-blurred:hover {
+  filter: none;
+}
